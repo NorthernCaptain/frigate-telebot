@@ -13,7 +13,7 @@ const config = {
         password: process.env.FBOT_MQTT_PASSWORD ? process.env.FBOT_MQTT_PASSWORD : "admin",
     },
     local: {
-        storageFolder: process.env.FBOT_STORAGE_FOLDER ? process.env.FBOT_STORAGE_FOLDER : "/tmp",
+        storageFolder: process.env.FBOT_STORAGE_FOLDER ? process.env.FBOT_STORAGE_FOLDER : "/storage",
     },
     telegram: {
         token: process.env.FBOT_TELEGRAM_TOKEN ? process.env.FBOT_TELEGRAM_TOKEN : "",
