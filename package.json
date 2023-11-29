@@ -1,0 +1,21 @@
+{
+    "name": "frigate-telebot",
+    "version": "0.0.1",
+    "description": "Telegram bot for Frigate NVR",
+    "main": "src/app.js",
+    "scripts": {
+        "start": "env-cmd -f prod.env node src/app.js"
+    },
+    "author": "Northern Captain",
+    "license": "MIT",
+    "dependencies": {
+        "env-cmd": "^10.1.0",
+        "light-event-bus": "^1.0.1",
+        "mqtt": "^5.3.1",
+        "telegraf": "^4.15.0",
+        "winston": "^3.11.0"
+    },
+    "devDependencies": {
+        "prettier": "^3.0.3"
+    }
+}
