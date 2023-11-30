@@ -24,7 +24,15 @@ const config = {
     },
     frigate: {
         url: process.env.FBOT_FRIGATE_URL ? process.env.FBOT_FRIGATE_URL : "http://localhost:5000",
-        postProcessDelay: 10000
+        postProcessDelay: 10000 //wait 10 seconds before sending video to telegram, NVR needs time to process it
+    },
+    bot: {
+        notifyOn: {
+            new: true, //notify on every new event, send snapshot
+            update: false, //notify on every update of the existing event, send snapshot
+            end: true, //notify when event ends, send snapshot
+            video: true, //send video clip when event ends and the video is ready
+        }
     },
     bus: new EventEmitter(),
 }

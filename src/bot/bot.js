@@ -37,6 +37,17 @@ class FBot {
             await ctx.reply(`Welcome to Frigate Bot! Your chat id is ${chatId}`)
         })
 
+        this.bot.command("stop", async (ctx) => {
+            let chatId = ctx.chat?.id
+            clog("FBOT: Got stop command from chat id", chatId)
+            this.removeChatId(chatId)
+            ctx.reply("I will stop sending notifications to this chat.\nYou can start me again with /start password\nBye, bye!")
+        })
+
+        this.bot.command("help", async (ctx) => {
+            await ctx.reply(`I'm a Frigate Bot.\nI will send you notifications with pictures and videos about events from your Frigate NVR.`);
+        })
+
         //Just for testing
         this.bot.hears("test-new", async (ctx) => {
             // Using context shortcut
@@ -61,35 +72,50 @@ class FBot {
     }
 
     async onFrigateEvent(event) {
-        clog("FBOT: Got frigate event: ", JSON.stringify(event, null, 2))
-
-        const subevent = event.after || event.before
-        const eventId = subevent?.id
-        if(!subevent || !eventId) {
-            clog("FBOT: Got frigate event without before or after")
-            return
-        }
-
-        if(event.type === "new" && subevent.has_snapshot) {
-            this.eventIds.add(eventId)
-            await this.sendSnapshot(eventId, subevent,"detected")
-        }
-
-        if(event.type === "update" && subevent.has_snapshot) {
-            this.eventIds.add(eventId)
-            await this.sendSnapshot(eventId, subevent, "updated")
-        }
-
-        if(event.type === "end") {
-            clog("FBOT: Got end event, video should be ready", eventId, subevent.has_clip)
-            if(subevent.has_clip) {
-                const zones = subevent.entered_zones.join(" -> ")
-                await this.sendMessage(`${this.frigate.cameraTitle(subevent)}: ${subevent.label} ended their way: ${zones}\nSending video... wait...\nLink if 🏃 ${this.frigate.uiEventsUrl(subevent)}`)
-                setTimeout(async () => {
-                    await this.sendClip(eventId, subevent)
-                }, this.config.frigate.postProcessDelay)
+        try {
+            clog("FBOT: Got frigate event: ", JSON.stringify(event, null, 2))
+            if (!this.chats.size) {
+                clog("FBOT: No chats registered, skipping")
+                return
             }
-            this.eventIds.delete(eventId)
+
+            const subevent = event.after || event.before
+            const eventId = subevent?.id
+            if (!subevent || !eventId) {
+                clog("FBOT: Got frigate event without before or after")
+                return
+            }
+
+            if (event.type === "new" && subevent.has_snapshot && this.config.bot.notifyOn.new) {
+                this.eventIds.add(eventId)
+                await this.sendSnapshot(eventId, subevent, `detected a ${subevent.label}`)
+            }
+
+            if (event.type === "update" && subevent.has_snapshot) {
+                if (this.eventIds.has(eventId) && !this.config.bot.notifyOn.update) {
+                    clog("FBOT: Got update event for already notified event, skipping")
+                    return
+                }
+                this.eventIds.add(eventId)
+                await this.sendSnapshot(eventId, subevent, `updated a ${subevent.label}`)
+            }
+
+            if (event.type === "end") {
+                clog("FBOT: Got end event, video should be ready", eventId, subevent.has_clip)
+                if (this.config.bot.notifyOn.end && subevent.has_snapshot) {
+                    const zones = subevent.entered_zones.join(" -> ")
+                    await this.sendSnapshot(eventId, subevent,
+                        `${subevent.label} ended their way: ${zones}\nSending video... wait...\nLink if 🏃 ${this.frigate.uiEventsUrl(subevent)}`)
+                }
+                if (this.config.bot.notifyOn.video && subevent.has_clip) {
+                    setTimeout(async () => {
+                        await this.sendClip(eventId, subevent)
+                    }, this.config.frigate.postProcessDelay)
+                }
+                this.eventIds.delete(eventId)
+            }
+        } catch (e) {
+            clog("FBOT: Error processing frigate event", e)
         }
     }
 
@@ -104,12 +130,12 @@ class FBot {
         }
     }
 
-    async sendSnapshot(id, event, type) {
+    async sendSnapshot(id, event, message) {
         clog("FBOT: Sending snapshot for id ", id)
         let url = this.frigate.eventSnapshotUrl(event)
-        let caption = `${this.frigate.cameraTitle(event)}: ${type} a ${event.label}`
+        let caption = `${this.frigate.cameraTitle(event)}: ${message}`
         for(let chatId of this.chats) {
-            clog(`FBOT: Sending snapshot to chat ${chatId}`)
+            clog(`FBOT: Sending snapshot ${url} to chat ${chatId}`)
             try {
                 await this.bot.telegram.sendPhoto(chatId, {url}, {caption})
             } catch(e) {
@@ -122,7 +148,7 @@ class FBot {
         let url = this.frigate.eventClipUrl(event)
         let caption = `${this.frigate.cameraTitle(event)}: Video of a ${event.label}`
         for(let chatId of this.chats) {
-            clog(`FBOT: Sending video to chat ${chatId}`)
+            clog(`FBOT: Sending video ${url} to chat ${chatId}`)
             try {
                 await this.bot.telegram.sendVideo(chatId, {url}, {caption})
             } catch(e) {
