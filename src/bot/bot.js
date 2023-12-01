@@ -140,6 +140,12 @@ class FBot {
                 await this.bot.telegram.sendPhoto(chatId, {url}, {caption})
             } catch(e) {
                 clog("FBOT: Error sending snapshot to chat", chatId, e)
+                //in case we can't send the snapshot, let's send a message, at least we'll know that something is going on.
+                try {
+                    await this.sendMessage(`${this.frigate.cameraTitle(event)}: Snapshot is not available, but something is happening.\nPlease check your NVR: ${this.frigate.uiEventsUrl(event)}`)
+                } catch(e) {
+                    clog("FBOT: Error sending message to chat", chatId, e)
+                }
             }
         }
     }
@@ -152,7 +158,16 @@ class FBot {
             try {
                 await this.bot.telegram.sendVideo(chatId, {url}, {caption})
             } catch(e) {
-                clog("FBOT: Error sending video to chat", chatId, e)
+                clog("FBOT: Error sending video to chat, let's try one more time in 10 sec", chatId, e)
+                //sometimes frigate is not ready to provide a video clip, let's try one more time in 10 sec
+                setTimeout(async () => {
+                    try {
+                        await this.bot.telegram.sendVideo(chatId, {url}, {caption})
+                    } catch(e) {
+                        clog("FBOT: Error sending video to chat, giving up", chatId, e)
+                        await this.sendMessage(`${this.frigate.cameraTitle(event)}: I'm sorry, I can't send you a video clip.\nPlease check your NVR: ${this.frigate.uiEventsUrl(event)}`)
+                    }
+                }, 10000)
             }
         }
         clog("Done sending video clip for id ", id)
