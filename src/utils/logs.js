@@ -52,7 +52,17 @@ function cerr(...params) {
     log.error(p2string(params))
 }
 
+function parseFloatDef(value, def) {
+    let parsed = parseFloat(value)
+    if(isNaN(parsed)) {
+        return def
+    } else {
+        return parsed
+    }
+}
+
 exports.log = log;
 exports.createLog = createLog;
 exports.clog = clog;
 exports.cerr = cerr;
+exports.parseFloatDef = parseFloatDef;

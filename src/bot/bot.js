@@ -10,17 +10,20 @@ const fs = require("fs")
 const { frigateTestEvents } = require("../frigate/testevents")
 
 class FBot {
-    constructor(config) {
+    static SETUP_CHATS_KEY = "telegram_chat_ids"
+
+    constructor(config, frigate) {
         this.config = config
         this.bus = config.bus
         this.bot = new Telegraf(config.telegram.token)
         this.chats = new Set()
         this.eventIds = new Set()
-        this.frigate = new Frigate(config)
+        this.frigate = frigate
+        config.db = this
     }
 
     async start() {
-        this.loadChatIds()
+        await this.loadChatIds()
 
         this.bus.on("frigateEvent", this.onFrigateEvent.bind(this))
 
@@ -32,7 +35,7 @@ class FBot {
                 await ctx.reply("I don't know you")
                 return
             } else {
-                this.addChatId(chatId)
+                await this.addChatId(chatId)
             }
             await ctx.reply(`Welcome to Frigate Bot! Your chat id is ${chatId}`)
         })
@@ -40,7 +43,7 @@ class FBot {
         this.bot.command("stop", async (ctx) => {
             let chatId = ctx.chat?.id
             clog("FBOT: Got stop command from chat id", chatId)
-            this.removeChatId(chatId)
+            await this.removeChatId(chatId)
             ctx.reply("I will stop sending notifications to this chat.\nYou can start me again with /start password\nBye, bye!")
         })
 
@@ -173,33 +176,28 @@ class FBot {
         clog("Done sending video clip for id ", id)
     }
 
-    addChatId(chatId) {
+    async addChatId(chatId) {
         if(this.chats.has(chatId)) {
             clog(`FBOT: Chat id ${chatId} already added`)
             return
         }
         this.chats.add(chatId)
-        fs.writeFileSync(this.config.telegram.chatIdFile(), JSON.stringify(Array.from(this.chats)))
+        await this.config.db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
         clog(`FBOT: Added chat id ${chatId}`)
     }
 
-    removeChatId(chatId) {
+    async removeChatId(chatId) {
         if(!this.chats.has(chatId)) {
             clog(`FBOT: Chat id ${chatId} not found`)
             return
         }
         this.chats.delete(chatId)
-        fs.writeFileSync(this.config.telegram.chatIdFile(), JSON.stringify(Array.from(this.chats)))
+        await this.config.db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
         clog(`FBOT: Removed chat id ${chatId}`)
     }
 
-    loadChatIds() {
-        const chatFile = this.config.telegram.chatIdFile()
-        if(!fs.existsSync(chatFile)) {
-            clog(`FBOT: Chat id file ${chatFile} not found`)
-            return
-        }
-        let chatIds = JSON.parse(fs.readFileSync(chatFile).toString())
+    async loadChatIds() {
+        let chatIds = this.config.db.getSetupValue(FBot.SETUP_CHATS_KEY, [], true)
         this.chats = new Set(chatIds)
         clog(`FBOT: Loaded ${chatIds.length} chat ids`)
     }
