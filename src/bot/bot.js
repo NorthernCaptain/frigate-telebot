@@ -8,6 +8,7 @@ const { clog } = require("../utils/logs")
 const { Frigate } = require("../frigate/frigate")
 const fs = require("fs")
 const { frigateTestEvents } = require("../frigate/testevents")
+const {db} = require("../db/db")
 
 class FBot {
     static SETUP_CHATS_KEY = "telegram_chat_ids"
@@ -47,6 +48,13 @@ class FBot {
             ctx.reply("I will stop sending notifications to this chat.\nYou can start me again with /start password\nBye, bye!")
         })
 
+        this.bot.command("stats", async (ctx) => {
+            let hours = parseInt(ctx.payload) || 48
+            clog("FBOT: Got stats command with hours =", hours)
+            let buf = await this.frigate.buildStatChart(hours)
+            ctx.replyWithPhoto({source: buf}, {caption: `Frigate stats for last ${hours} hours`})
+        })
+
         this.bot.command("help", async (ctx) => {
             await ctx.reply(`I'm a Frigate Bot.\nI will send you notifications with pictures and videos about events from your Frigate NVR.`);
         })
@@ -54,7 +62,7 @@ class FBot {
         //Just for testing
         this.bot.hears("test-new", async (ctx) => {
             // Using context shortcut
-            await ctx.reply(`New event`)
+            await ctx.replyWithPhoto(`New event`)
             this.bus.emit("frigateEvent",  frigateTestEvents.new)
         })
         this.bot.hears("test-update", async (ctx) => {
@@ -182,7 +190,7 @@ class FBot {
             return
         }
         this.chats.add(chatId)
-        await this.config.db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
+        await db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
         clog(`FBOT: Added chat id ${chatId}`)
     }
 
@@ -192,12 +200,12 @@ class FBot {
             return
         }
         this.chats.delete(chatId)
-        await this.config.db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
+        await db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
         clog(`FBOT: Removed chat id ${chatId}`)
     }
 
     async loadChatIds() {
-        let chatIds = this.config.db.getSetupValue(FBot.SETUP_CHATS_KEY, [], true)
+        let chatIds = await db.getSetupValue(FBot.SETUP_CHATS_KEY, [], true)
         this.chats = new Set(chatIds)
         clog(`FBOT: Loaded ${chatIds.length} chat ids`)
     }

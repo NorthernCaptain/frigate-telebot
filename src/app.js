@@ -20,7 +20,7 @@ async function start() {
     await db.start()
     await mqtt.start()
     await frigate.start()
-//    await bot.start()
+    await bot.start()
 }
 
 start().then(() => {
