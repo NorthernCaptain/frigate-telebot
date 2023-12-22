@@ -27,6 +27,8 @@ class FBot {
         await this.loadChatIds()
 
         this.bus.on("frigateEvent", this.onFrigateEvent.bind(this))
+        this.bus.on("frigateCameraFailed", this.onFrigateCameraFail.bind(this))
+        this.bus.on("frigateCameraRestored", this.onFrigateCameraRestore.bind(this))
 
         this.bot.command("start", async (ctx) => {
             // Explicit usage
@@ -76,10 +78,19 @@ class FBot {
             this.bus.emit("frigateEvent", frigateTestEvents.end)
         })
 
-
         await this.bot.launch()
         process.once('SIGINT', () => this.bot.stop('SIGINT'))
         process.once('SIGTERM', () => this.bot.stop('SIGTERM'))
+    }
+
+    async onFrigateCameraFail(event) {
+        clog("FBOT: Got frigate camera FAIL event: ", JSON.stringify(event, null, 2))
+        await this.sendMessage(`🔥WARNING🔥 Camera ${event.name} is not available!\nPlease check your NVR: ${this.frigate.uiEventsUrl({camera: event.name})}`)
+    }
+
+    async onFrigateCameraRestore(event) {
+        clog("FBOT: Got frigate camera RESTORE event: ", JSON.stringify(event, null, 2))
+        await this.sendMessage(`ℹ️INFO: Camera ${event.name} was restored!\nPlease check your NVR: ${this.frigate.uiEventsUrl({camera: event.name})}`)
     }
 
     async onFrigateEvent(event) {

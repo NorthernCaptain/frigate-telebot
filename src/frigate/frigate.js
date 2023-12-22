@@ -25,14 +25,39 @@ class Frigate {
             }
         });
         this.chart.registerFont("./src/font/RobotoCondensed-Regular.ttf", { family: "RobotoRegular" });
+        this.faultyCameras = new Set()
     }
 
     async start() {
         this.bus.on("frigateStats", this.onFrigateStats.bind(this))
     }
 
+    checkCameras(event) {
+        //first let's check the cameras
+        for(let key in event) {
+            let camera = event[key]
+            if(camera.hasOwnProperty("camera_fps")) {
+                //found a camera, let's check the fps
+                if(camera.camera_fps < 1) {
+                    if(!this.faultyCameras.has(key)) {
+                        this.faultyCameras.add(key)
+                        clog("Frigate: Camera", key, "is faulty. FPS =", camera.camera_fps)
+                        this.bus.emit("frigateCameraFailed", {name: key, camera: camera})
+                    }
+                } else {
+                    if(this.faultyCameras.has(key)) {
+                        this.faultyCameras.delete(key)
+                        clog("Frigate: Camera", key, "is OK. FPS =", camera.camera_fps)
+                        this.bus.emit("frigateCameraRestored", {name: key, camera: camera})
+                    }
+                }
+            }
+        }
+    }
     async onFrigateStats(event) {
         try {
+            this.checkCameras(event)
+
             //let's calculate the stats
             let stats = {
                 cpu_usage_p: 0,
