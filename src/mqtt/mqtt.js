@@ -17,15 +17,22 @@ class MQTTListener {
             username: this.config.mqtt.username,
             password: this.config.mqtt.password,
         })
-        clog("Connected to mqtt server at ", this.config.mqtt.url)
+
         await this.client.subscribeAsync("frigate/events")
+        await this.client.subscribeAsync("frigate/stats")
+
         this.client.on("message", this.onMessage.bind(this))
+
+        clog("Connected to mqtt server at ", this.config.mqtt.url)
     }
 
     onMessage(topic, message) {
         switch(topic) {
             case "frigate/events":
                 this.onFrigateEvent(message.toString())
+                break
+            case "frigate/stats":
+                this.onFrigateStats(message.toString())
                 break
         }
     }
@@ -34,6 +41,11 @@ class MQTTListener {
         clog("MQTT: Got event: ", message)
         let event = JSON.parse(message)
         this.bus.emit("frigateEvent", event)
+    }
+    onFrigateStats(message) {
+        clog("MQTT: Got stats: ", message)
+        let event = JSON.parse(message)
+        this.bus.emit("frigateStats", event)
     }
 }
 

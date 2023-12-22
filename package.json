@@ -1,6 +1,6 @@
 {
     "name": "frigate-telebot",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "description": "Telegram bot for Frigate NVR",
     "main": "src/app.js",
     "scripts": {
@@ -9,8 +9,12 @@
     "author": "Northern Captain",
     "license": "MIT",
     "dependencies": {
+        "chart.js": "^3.9.1",
+        "chartjs-node-canvas": "^4.1.6",
         "env-cmd": "^10.1.0",
         "mqtt": "^5.3.1",
+        "sequelize": "^6.35.1",
+        "sqlite3": "^5.1.6",
         "telegraf": "4.15.0",
         "winston": "^3.11.0"
     },

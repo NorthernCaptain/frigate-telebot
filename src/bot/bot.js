@@ -8,21 +8,27 @@ const { clog } = require("../utils/logs")
 const { Frigate } = require("../frigate/frigate")
 const fs = require("fs")
 const { frigateTestEvents } = require("../frigate/testevents")
+const {db} = require("../db/db")
 
 class FBot {
-    constructor(config) {
+    static SETUP_CHATS_KEY = "telegram_chat_ids"
+
+    constructor(config, frigate) {
         this.config = config
         this.bus = config.bus
         this.bot = new Telegraf(config.telegram.token)
         this.chats = new Set()
         this.eventIds = new Set()
-        this.frigate = new Frigate(config)
+        this.frigate = frigate
+        config.db = this
     }
 
     async start() {
-        this.loadChatIds()
+        await this.loadChatIds()
 
         this.bus.on("frigateEvent", this.onFrigateEvent.bind(this))
+        this.bus.on("frigateCameraFailed", this.onFrigateCameraFail.bind(this))
+        this.bus.on("frigateCameraRestored", this.onFrigateCameraRestore.bind(this))
 
         this.bot.command("start", async (ctx) => {
             // Explicit usage
@@ -32,7 +38,7 @@ class FBot {
                 await ctx.reply("I don't know you")
                 return
             } else {
-                this.addChatId(chatId)
+                await this.addChatId(chatId)
             }
             await ctx.reply(`Welcome to Frigate Bot! Your chat id is ${chatId}`)
         })
@@ -40,8 +46,15 @@ class FBot {
         this.bot.command("stop", async (ctx) => {
             let chatId = ctx.chat?.id
             clog("FBOT: Got stop command from chat id", chatId)
-            this.removeChatId(chatId)
+            await this.removeChatId(chatId)
             ctx.reply("I will stop sending notifications to this chat.\nYou can start me again with /start password\nBye, bye!")
+        })
+
+        this.bot.command("stats", async (ctx) => {
+            let hours = parseInt(ctx.payload) || 48
+            clog("FBOT: Got stats command with hours =", hours)
+            let buf = await this.frigate.buildStatChart(hours)
+            ctx.replyWithPhoto({source: buf}, {caption: `Frigate stats for last ${hours} hours`})
         })
 
         this.bot.command("help", async (ctx) => {
@@ -51,7 +64,7 @@ class FBot {
         //Just for testing
         this.bot.hears("test-new", async (ctx) => {
             // Using context shortcut
-            await ctx.reply(`New event`)
+            await ctx.replyWithPhoto(`New event`)
             this.bus.emit("frigateEvent",  frigateTestEvents.new)
         })
         this.bot.hears("test-update", async (ctx) => {
@@ -65,10 +78,19 @@ class FBot {
             this.bus.emit("frigateEvent", frigateTestEvents.end)
         })
 
-
         await this.bot.launch()
         process.once('SIGINT', () => this.bot.stop('SIGINT'))
         process.once('SIGTERM', () => this.bot.stop('SIGTERM'))
+    }
+
+    async onFrigateCameraFail(event) {
+        clog("FBOT: Got frigate camera FAIL event: ", JSON.stringify(event, null, 2))
+        await this.sendMessage(`🔥WARNING🔥 Camera ${event.name} is not available!\nPlease check your NVR: ${this.frigate.uiEventsUrl({camera: event.name})}`)
+    }
+
+    async onFrigateCameraRestore(event) {
+        clog("FBOT: Got frigate camera RESTORE event: ", JSON.stringify(event, null, 2))
+        await this.sendMessage(`ℹ️INFO: Camera ${event.name} was restored!\nPlease check your NVR: ${this.frigate.uiEventsUrl({camera: event.name})}`)
     }
 
     async onFrigateEvent(event) {
@@ -140,6 +162,12 @@ class FBot {
                 await this.bot.telegram.sendPhoto(chatId, {url}, {caption})
             } catch(e) {
                 clog("FBOT: Error sending snapshot to chat", chatId, e)
+                //in case we can't send the snapshot, let's send a message, at least we'll know that something is going on.
+                try {
+                    await this.sendMessage(`${this.frigate.cameraTitle(event)}: Snapshot is not available, but something is happening.\nPlease check your NVR: ${this.frigate.uiEventsUrl(event)}`)
+                } catch(e) {
+                    clog("FBOT: Error sending message to chat", chatId, e)
+                }
             }
         }
     }
@@ -152,39 +180,43 @@ class FBot {
             try {
                 await this.bot.telegram.sendVideo(chatId, {url}, {caption})
             } catch(e) {
-                clog("FBOT: Error sending video to chat", chatId, e)
+                clog("FBOT: Error sending video to chat, let's try one more time in 10 sec", chatId, e)
+                //sometimes frigate is not ready to provide a video clip, let's try one more time in 10 sec
+                setTimeout(async () => {
+                    try {
+                        await this.bot.telegram.sendVideo(chatId, {url}, {caption})
+                    } catch(e) {
+                        clog("FBOT: Error sending video to chat, giving up", chatId, e)
+                        await this.sendMessage(`${this.frigate.cameraTitle(event)}: I'm sorry, I can't send you a video clip.\nPlease check your NVR: ${this.frigate.uiEventsUrl(event)}`)
+                    }
+                }, 10000)
             }
         }
         clog("Done sending video clip for id ", id)
     }
 
-    addChatId(chatId) {
+    async addChatId(chatId) {
         if(this.chats.has(chatId)) {
             clog(`FBOT: Chat id ${chatId} already added`)
             return
         }
         this.chats.add(chatId)
-        fs.writeFileSync(this.config.telegram.chatIdFile(), JSON.stringify(Array.from(this.chats)))
+        await db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
         clog(`FBOT: Added chat id ${chatId}`)
     }
 
-    removeChatId(chatId) {
+    async removeChatId(chatId) {
         if(!this.chats.has(chatId)) {
             clog(`FBOT: Chat id ${chatId} not found`)
             return
         }
         this.chats.delete(chatId)
-        fs.writeFileSync(this.config.telegram.chatIdFile(), JSON.stringify(Array.from(this.chats)))
+        await db.setSetupValue(FBot.SETUP_CHATS_KEY, Array.from(this.chats))
         clog(`FBOT: Removed chat id ${chatId}`)
     }
 
-    loadChatIds() {
-        const chatFile = this.config.telegram.chatIdFile()
-        if(!fs.existsSync(chatFile)) {
-            clog(`FBOT: Chat id file ${chatFile} not found`)
-            return
-        }
-        let chatIds = JSON.parse(fs.readFileSync(chatFile).toString())
+    async loadChatIds() {
+        let chatIds = await db.getSetupValue(FBot.SETUP_CHATS_KEY, [], true)
         this.chats = new Set(chatIds)
         clog(`FBOT: Loaded ${chatIds.length} chat ids`)
     }

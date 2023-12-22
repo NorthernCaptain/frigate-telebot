@@ -14,6 +14,9 @@ const config = {
     },
     local: {
         storageFolder: process.env.FBOT_STORAGE_FOLDER ? process.env.FBOT_STORAGE_FOLDER : "/storage",
+        dbFile: () => {
+            return `${config.local.storageFolder}/db.sqlite`
+        }
     },
     telegram: {
         token: process.env.FBOT_TELEGRAM_TOKEN ? process.env.FBOT_TELEGRAM_TOKEN : "",
@@ -35,6 +38,7 @@ const config = {
         }
     },
     bus: new EventEmitter(),
+    db: null //database instance will be set in app.js
 }
 
 exports.config = config;
